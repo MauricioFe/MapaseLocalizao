@@ -7,6 +7,7 @@ import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Intent;
 import android.content.IntentSender;
@@ -17,6 +18,7 @@ import android.os.Handler;
 import android.os.PersistableBundle;
 import android.text.Layout;
 import android.util.Log;
+import android.view.View;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -50,6 +52,7 @@ import java.util.concurrent.TimeUnit;
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     private static final int REQUEST_ERRO_PLAY_SERVICES = 1;
     private static final String EXTRA_DIALOG = "dialog";
+    public static final int REQUEST_CHECAR_GPS = 3;
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
@@ -82,6 +85,12 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 .addOnConnectionFailedListener(this)
                 .addApi(LocationServices.API)
                 .build();
+        findViewById(R.id.localização_atual_button).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                verificarStatusGPS();
+            }
+        });
     }
 
     @Override
@@ -106,6 +115,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     protected void onStop() {
         if (mGoogleApiClient != null && mGoogleApiClient.isConnected())
             mGoogleApiClient.disconnect();
+        mHandler.removeCallbacksAndMessages(null);
         super.onStop();
     }
 
@@ -114,6 +124,16 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_ERRO_PLAY_SERVICES && resultCode == RESULT_OK)
             mGoogleApiClient.connect();
+        else if(requestCode == REQUEST_CHECAR_GPS){
+            if (resultCode == Activity.RESULT_OK){
+                mTentativas =0;
+                mHandler.removeCallbacksAndMessages(null);
+                obterUltimaLocalizacao();
+            }else{
+                Toast.makeText(this, R.string.erro_gps, Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        }
     }
 
 
@@ -166,7 +186,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-        obterUltimaLocalizacao();
+
     }
 
     private void obterUltimaLocalizacao() {
@@ -181,15 +201,23 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     public void onSuccess(Location location) {
                         // Got last known location. In some rare situations this can be null.
                         if (location != null) {
+                            mTentativas =0;
                             mOrigem = new LatLng(location.getLatitude(), location.getLongitude());
                             atualizaMapa();
+                        }else if (mTentativas < 10){
+                            mTentativas++;
+                            mHandler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    obterUltimaLocalizacao();
+                                }
+                            }, 2000);
                         }
                     }
                 });
     }
 
     private void atualizaMapa() {
-        Toast.makeText(this, "Bacon", Toast.LENGTH_SHORT).show();
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(mOrigem, 17.0f));
         mMap.clear();
         mMap.addMarker(new MarkerOptions().position(mOrigem).title("Localização atual"));
@@ -222,7 +250,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
                         if (mDeveExibirDialog) {
                             try {
-                                status.startResolutionForResult(MapsActivity.this, REQUEST_ERRO_PLAY_SERVICES);
+                                status.startResolutionForResult(MapsActivity.this, REQUEST_CHECAR_GPS);
                                 mDeveExibirDialog = false;
                             } catch (IntentSender.SendIntentException e) {
                                 e.printStackTrace();
